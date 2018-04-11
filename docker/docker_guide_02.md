@@ -132,8 +132,102 @@ $ ls
 Dockerfile		app.py			requirements.txt
 ```
 
-今度は、ビルドコマンドを実行しましょう。これはDockerイメージを作成するコマンドです。`-t`オプションを利用することでタグを付けています。こうすることでよりフレンドリな名前をつけることができます。
+今度は、ビルドコマンドを実行しましょう。これはDockerイメージを作成するコマンドです。`-t`オプションを利用することでタグを付けています。こうすることでよりフレンドリーな名前をつけることができます。
 
 ```sh
-$ docker build -t friendlyhello .
+docker build -t friendlyhello .
 ```
+
+ビルドされたイメージはどこにあるでしょう？それはコンピュータの中のローカルなDocker専用のレジストリの中に保存されています。
+
+```sh
+docker image ls
+```
+
+#### Linuxユーザのためのトラブルシューティング
+
+##### DNS設定
+
+プロキシサーバが起動した後に、ウェブアプリへの通信を遮断する可能性があります。もしあなたが、プロキシサーバごしに通信を行っているのであれば、以下の行をDockerFileに追加してください。`ENV`コマンドを使用することで、ホストを指定、また、プロキシサーバへの接続ポートを指定することが可能です。
+
+```docker
+# Set proxy server, replace host:port with values for your servers
+ENV http_proxy host:port
+ENV https_proxy host:port
+```
+
+#### プロキシサーバ設定
+
+DNSの誤った設定は`pip`に関する問題を引き起こす事があります。`pip`を適切に動作させるために自身のDNSサーバのアドレスを設定する必要があります。DockerデーモンのDNS設定を変更したいと思うかもしれません。`/etc/docker/daemon.json`で`dns`キーを用いて設定ファイルを記述することができます。以下のように書くことができます。
+
+```json
+{
+  "dns": ["your_dns_address", "8.8.8.8"]
+}
+```
+
+上の例では、配列の最初の要素がDNSサーバーのアドレスです。二つ目の要素は最初の要素が使えなかったときのためのGoogleのDNSです。
+
+手順を続ける前に、daemon.jsonを保存して、dockerサービスを再起動してください。
+
+```sh
+sudo service docker restart
+```
+
+いったん修正したら、`build`コマンドを再度動かしてみてください。
+
+### アプリを動かす
+
+アプリを動かします。ローカルホストの4000番ポートをコンテナが公開している80番ポートを`-p`オプションを使用して接続してみましょう。
+
+```sh
+docker run -p 4000:80 friendlyhello
+```
+
+あなたは、`http://0.0.0.0:80`でPythonがアプリをサービスインさせています、といったメッセージを目にするはずです。しかし、このメッセージはコンテナの内部からやってきたものです。コンテナはあなたが80番ポートを4000番ポートへ接続したことを認識していません。URLを`http://localhost:4000`と修正しましょう。
+
+そのURLへアクセスしてウェブページにアップされているコンテンツを確認してみてください。
+
+!!画像を貼る
+
+> 留意事項:もしあなたがWindows7上でDockerToolBoxを使っているのであれば、`localhost`の代わりに、DockerMachineのIPアドレスを使用してください。例えば、`http://192.168.99.100:4000/`といったアドレスです。これを確認するためには、`docker-machine ip`コマンドを利用します。
+
+`curl`コマンドをshellから利用しても同じ内容を見ることができます。
+
+```sh
+$ curl http://localhost:4000
+<h3>Hello World!</h3><b>Hostname:</b> 88f12064cd94<br/><b>Visits:</b> <i>cannot connect to Redis, counter disabled</i>
+```
+
+この`4000:80`のポートリマッピングは`Dockerfile`内部で`EXPOSE`(さら)したものと`docker run -p`を利用して`publish`(公開)したものの違いを実証しています。(うまく訳せず。)後述する手順では、ホストコンピューターの80番ポートをコンテナの80番ポートにマッピングして、`http:localhost`を利用します。
+
+終了するために、`CTRL+C`をターミナルで入力してください。
+
+> __Windows上での明示的コンテナの停止__
+>
+> WIndowsのシステム上では、`CTRL+C`はコンテナを停止させません。したがって、最初の`CTRL+C`はプロンプトを戻すためのものです(あるいは、別のシェルをオープンする）。それから`docker container ls`を入力して稼働中のコンテナをリストアップしいます。そして、`docker container stop <Container NAME or ID>` をコンテナを停止するために入力します。そうしなければ、次の手順で再度コンテナを動かそうとしたときに、デーモンからエラーのレスポンスが返ってくることでしょう。
+
+今度は、バックグラウンドでアプリを動かしてみましょう。detached mode で動かします。
+
+```sh
+docker run -d -p 4000:80 friendlyhello
+```
+
+アプリの長いコンテナIDがターミナルに吐き出されるのが見られるでしょう。コンテナは今、バックグラウンドで稼働しています。`docker container ls`をすることで、省略されたコンテナIDを確認することもできます。（コマンドの実行時にはどちらも互換的に動作します。）
+
+```sh
+❯ docker container ls
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS                  NAMES
+d34700db24bb        friendlyhello       "python app.py"     13 seconds ago      Up 8 seconds        0.0.0.0:4000->80/tcp   determined_clarke
+```
+
+`CONTAINER ID`が`http://localhost:4000`のものと一致することに留意してください。
+
+今度は、`docker container stop`をプロセスを終了するために使用します。`CONTAINER ID`を使用します。以下のようにです。
+
+```sh
+docker container stop d34700db24bb
+```
+
+### Imageを共有する
+
